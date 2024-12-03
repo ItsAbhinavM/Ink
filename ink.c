@@ -145,6 +145,17 @@ void deleteChar() {
     updateLineInfo();
 }
 
+int is_visual_mode = 0;
+int selection_start_row = -1;
+int selection_start_col = -1;
+
+void resetSelection() {
+    is_visual_mode = 0;
+    selection_start_row = -1;
+    selection_start_col = -1;
+}
+
+
 void render() {
     clear();
     int line_num_width = 5;  
@@ -156,7 +167,15 @@ void render() {
         }
 
         for (int col = 0; col < buffer.line_lengths[line]; col++) {
+            if (is_visual_mode &&
+                ((line > selection_start_row || 
+                 (line == selection_start_row && col >= selection_start_col)) &&
+                (line < buffer.cursor_row || 
+                 (line == buffer.cursor_row && col <= buffer.cursor_col)))) {
+                attron(A_REVERSE);
+            }
             mvaddch(line, line_num_width + col, buffer.text[line_start + col]);
+            attroff(A_REVERSE);
         }
     }
 
@@ -164,7 +183,9 @@ void render() {
     curs_set(1);
     if (is_insert_mode) {
         mvprintw(LINES - 1, 0, "-- INSERT MODE --");
-    } else {
+    } else if (is_visual_mode) {
+        mvprintw(LINES - 1, 0, "-- VISUAL MODE --");
+    }  else {
         mvprintw(LINES - 1, 0, "-- COMMAND MODE --");
     }
     move(buffer.cursor_row, line_num_width + buffer.cursor_col);
@@ -278,6 +299,24 @@ int main(int argc, char *argv[]) {
                     }
                     break;
             }
+        }  else if (is_visual_mode) {
+            switch (ch) {
+                case 27:  
+                    resetSelection();
+                    break;
+                case 'h':
+                    moveCursorLeft();
+                    break;
+                case 'j':
+                    moveCursorDown();
+                    break;
+                case 'k':
+                    moveCursorUp();
+                    break;
+                case 'l':
+                    moveCursorRight();
+                    break;
+            }
         } else {
             switch (ch) {
                 case 'q':
@@ -291,6 +330,11 @@ int main(int argc, char *argv[]) {
                     break;
                 case 'i':
                     is_insert_mode = 1;
+                    break;
+                case 'v':
+                    is_visual_mode = 1;
+                    selection_start_row = buffer.cursor_row;
+                    selection_start_col = buffer.cursor_col;
                     break;
                 case 'h':
                     moveCursorLeft();
