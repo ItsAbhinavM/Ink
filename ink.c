@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <termios.h>
 #include <ncurses.h>
-
+#define min(a,b) ((a) < (b) ? (a) : (b))
 struct termios orig_termios;
 
 void die(const char *s) {
@@ -36,11 +36,14 @@ typedef struct {
     size_t capacity;
     int curr_line;
     int curr_col;
+    int cursor_row;
+    int cursor_col;
     int line_lengths[1000]; 
     int total_lines;
 } TextBuffer;
 
-TextBuffer buffer = {NULL, 0, 0, 0, 0, {0}, 0};
+// TextBuffer buffer = {NULL, 0, 0, 0, 0, {0}, 0};
+TextBuffer buffer = {0};
 int is_insert_mode = 0;
 
 void initTextBuffer() {
@@ -72,6 +75,8 @@ void updateLineInfo() {
 }
 
 void insertChar(char c) {
+    buffer.curr_line = buffer.cursor_row;
+    buffer.curr_col = buffer.cursor_col;
     if (buffer.length + 1 >= buffer.capacity) {
         buffer.capacity *= 2;
         buffer.text = (char *)realloc(buffer.text, buffer.capacity);
@@ -94,15 +99,21 @@ void insertChar(char c) {
         buffer.total_lines++;
         buffer.curr_line++;
         buffer.curr_col = 0;
+        buffer.cursor_col = 0;
     } else {
         buffer.curr_col++;
+        buffer.cursor_col++;
     }
-
+    buffer.curr_col++;
     updateLineInfo();
 }
 
 void deleteChar() {
+    buffer.curr_line = buffer.cursor_row;
+    buffer.curr_col = buffer.cursor_col;
+    
     if (buffer.length == 0) return;
+    
     size_t abs_pos = 0;
     for (int i = 0; i < buffer.curr_line; i++) {
         abs_pos += buffer.line_lengths[i] + 1;
@@ -112,17 +123,25 @@ void deleteChar() {
     if (abs_pos == 0) return;
 
     if (buffer.curr_col == 0 && buffer.curr_line > 0) {
-        buffer.curr_line--;
-        buffer.curr_col = buffer.line_lengths[buffer.curr_line];
+        size_t prev_line_length = buffer.line_lengths[buffer.curr_line - 1];
+        
+        buffer.cursor_row--;
+        buffer.cursor_col = prev_line_length;
+        
+        memmove(buffer.text + abs_pos - 1, 
+                buffer.text + abs_pos, 
+                buffer.length - abs_pos);
+        
+        buffer.length--;
     } else if (buffer.curr_col > 0) {
-        buffer.curr_col--;
+        memmove(buffer.text + abs_pos - 1, 
+                buffer.text + abs_pos, 
+                buffer.length - abs_pos);
+        
+        buffer.length--;
+        buffer.cursor_col--;
     }
-    memmove(buffer.text + abs_pos - 1, 
-            buffer.text + abs_pos, 
-            buffer.length - abs_pos);
     
-    buffer.length--;
-
     updateLineInfo();
 }
 
@@ -148,43 +167,43 @@ void render() {
     } else {
         mvprintw(LINES - 1, 0, "-- COMMAND MODE --");
     }
-
+    move(buffer.cursor_row, line_num_width + buffer.cursor_col);
     refresh();
 }
 
+int getLineLength(int line) {
+    return buffer.line_lengths[line];
+}
+
 void moveCursorUp() {
-    if (buffer.curr_line > 0) {
-        buffer.curr_line--;
-        buffer.curr_col = (buffer.curr_col > buffer.line_lengths[buffer.curr_line]) 
-                          ? buffer.line_lengths[buffer.curr_line] 
-                          : buffer.curr_col;
+    if (buffer.cursor_row > 0) {
+        buffer.cursor_row--;
+        buffer.cursor_col = min(buffer.cursor_col, getLineLength(buffer.cursor_row));
     }
 }
 
 void moveCursorDown() {
-    if (buffer.curr_line < buffer.total_lines - 1) {
-        buffer.curr_line++;
-        buffer.curr_col = (buffer.curr_col > buffer.line_lengths[buffer.curr_line]) 
-                          ? buffer.line_lengths[buffer.curr_line] 
-                          : buffer.curr_col;
+    if (buffer.cursor_row < buffer.total_lines - 1) {
+        buffer.cursor_row++;
+        buffer.cursor_col = min(buffer.cursor_col, getLineLength(buffer.cursor_row));
     }
 }
 
 void moveCursorLeft() {
-    if (buffer.curr_col > 0) {
-        buffer.curr_col--;
-    } else if (buffer.curr_line > 0) {
-        buffer.curr_line--;
-        buffer.curr_col = buffer.line_lengths[buffer.curr_line];
+    if (buffer.cursor_col > 0) {
+        buffer.cursor_col--;
+    } else if (buffer.cursor_row > 0) {
+        buffer.cursor_row--;
+        buffer.cursor_col = buffer.line_lengths[buffer.cursor_row];
     }
 }
 
 void moveCursorRight() {
-    if (buffer.curr_col < buffer.line_lengths[buffer.curr_line]) {
-        buffer.curr_col++;
-    } else if (buffer.curr_line < buffer.total_lines - 1) {
-        buffer.curr_line++;
-        buffer.curr_col = 0;
+    if (buffer.cursor_col < buffer.line_lengths[buffer.cursor_row]) {
+        buffer.cursor_col++;
+    } else if (buffer.cursor_row < buffer.total_lines - 1) {
+        buffer.cursor_row++;
+        buffer.cursor_col = 0;
     }
 }
 
