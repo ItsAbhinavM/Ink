@@ -11,10 +11,6 @@ struct termios orig_termios;
 char *clipboard = NULL;
 size_t clipboard_length = 0;
 
-
-
-
-
 void die(const char *s) {
     endwin();  
     perror(s);
@@ -472,25 +468,35 @@ int main(int argc, char *argv[]) {
                     }
                     break;
             }
-        }  else if (is_visual_mode) {
+        }  
+        else if (is_visual_mode) {
             switch (ch) {
+                case 'y':  
+                    copy();
+                    resetSelection();
+                    break;
                 case 27:  
                     resetSelection();
                     break;
-                case 'h':
-                    moveCursorLeft();
-                    break;
-                case 'j':
-                    moveCursorDown();
-                    break;
-                case 'k':
+                case KEY_UP:
                     moveCursorUp();
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
                     break;
-                case 'l':
+                case KEY_DOWN:
+                    moveCursorDown();
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
+                    break;
+                case KEY_LEFT:
+                    moveCursorLeft();
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
+                    break;
+                case KEY_RIGHT:
                     moveCursorRight();
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
                     break;
             }
-        } else {
+            }
+         else {
             switch (ch) {
                 case 'q':
                     endwin();
