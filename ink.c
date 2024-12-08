@@ -7,6 +7,14 @@
 #define min(a,b) ((a) < (b) ? (a) : (b))
 struct termios orig_termios;
 
+
+char *clipboard = NULL;
+size_t clipboard_length = 0;
+
+
+
+
+
 void die(const char *s) {
     endwin();  
     perror(s);
@@ -267,11 +275,7 @@ int is_visual_mode = 0;
 int selection_start_row = -1;
 int selection_start_col = -1;
 
-void resetSelection() {
-    is_visual_mode = 0;
-    selection_start_row = -1;
-    selection_start_col = -1;
-}
+
 
 
 void render() {
@@ -381,6 +385,57 @@ void saveFile(const char *filename) {
     refresh();
 }
 
+void resetSelection() {
+    is_visual_mode = 0;
+    selection_start_row = -1;
+    selection_start_col = -1;
+}
+
+
+void updateSelection(int row, int col) {
+    if (selection_start_row == -1) {
+        selection_start_row = row;
+        selection_start_col = col;
+    }
+    if (row != selection_start_row || col != selection_start_col) {
+        if (row < selection_start_row || (row == selection_start_row && col < selection_start_col)) {
+            selection_start_row = row;
+            selection_start_col = col;
+        }
+    }
+}
+
+void copy() {
+    if (selection_start_row == -1) return; 
+
+    int start_pos = 0;
+    for (int i = 0; i < selection_start_row; i++) {
+        start_pos += buffer.line_lengths[i] + 1;
+    }
+    start_pos += selection_start_col;
+
+    int end_pos = 0;
+    for (int i = 0; i < buffer.cursor_row; i++) {
+        end_pos += buffer.line_lengths[i] + 1;
+    }
+    end_pos += buffer.cursor_col;
+
+    clipboard_length = end_pos - start_pos;
+    clipboard = (char *)malloc(clipboard_length + 1);
+    if (!clipboard) die("malloc clipboard");
+    memcpy(clipboard, buffer.text + start_pos, clipboard_length);
+    clipboard[clipboard_length] = '\0';
+}
+
+void paste() {
+    if (!clipboard || clipboard_length == 0) return;  
+
+    for (size_t i = 0; i < clipboard_length; i++) {
+        insertChar(clipboard[i]);
+    }
+}
+
+
 int main(int argc, char *argv[]) {
     initscr();
     raw();
@@ -456,15 +511,19 @@ int main(int argc, char *argv[]) {
                     break;
                 case 'h':
                     moveCursorLeft();
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
                     break;
                 case 'j':
                     moveCursorDown();
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
                     break;
                 case 'k':
                     moveCursorUp();
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
                     break;
                 case 'l':
                     moveCursorRight();
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
                     break;
                 case 'u': 
                     undo();
@@ -472,7 +531,12 @@ int main(int argc, char *argv[]) {
                 case 'r': 
                     redo();
                     break;
-
+                case 'y': 
+                    copy();
+                    break;
+                case 'p': 
+                    paste();
+                    break;
                 default:
                     break;
             }
