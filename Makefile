@@ -1,3 +1,11 @@
-ink: ink.c
-        $(CC) ink.c -o ink -Wall -Wextra -pedantic -std=c99
+CC = gcc
+CFLAGS = -lncurses
+TARGET = ink
+SRC = ink.c
+
+$(TARGET): $(SRC)
+	$(CC) $(SRC) -o $(TARGET) $(CFLAGS)
+
+clean:
+	rm -f $(TARGET)
 
