@@ -1,5 +1,5 @@
-# Text-Editor
-Text editor tool made using C
+# Ink
+A Text-Editor tool made using C
 
 use this command to run the tool
 ```
