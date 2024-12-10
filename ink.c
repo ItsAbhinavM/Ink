@@ -125,27 +125,33 @@ void insertChar(char c) {
     }
     abs_pos += buffer.curr_col;
 
-    // Log to undo stack
     Action action = {'i', abs_pos, c};
     pushUndo(action);
-    redo_top = -1; // Clear redo stack
-
-    memmove(buffer.text + abs_pos + 1, buffer.text + abs_pos, buffer.length - abs_pos);
-    buffer.text[abs_pos] = c;
-    buffer.length++;
+    redo_top = -1; 
 
     if (c == '\n') {
+        memmove(buffer.text + abs_pos + 1, buffer.text + abs_pos, buffer.length - abs_pos);
+        buffer.text[abs_pos] = c;
+        buffer.length++;
         buffer.total_lines++;
-        buffer.curr_line++;
-        buffer.curr_col = 0;
-        buffer.cursor_col = 0;
     } else {
-        buffer.curr_col++;
-        buffer.cursor_col++;
+        memmove(buffer.text + abs_pos + 1, buffer.text + abs_pos, buffer.length - abs_pos);
+        buffer.text[abs_pos] = c;
+        buffer.length++;
     }
-    updateLineInfo();
-}
 
+    updateLineInfo();
+
+    if (c == '\n') {
+        buffer.cursor_row++;
+        buffer.cursor_col = 0;
+        buffer.curr_line = buffer.cursor_row;
+        buffer.curr_col = 0;
+    } else {
+        buffer.cursor_col++;
+        buffer.curr_col++;
+    }
+}
 void deleteChar() {
     buffer.curr_line = buffer.cursor_row;
     buffer.curr_col = buffer.cursor_col;
@@ -393,34 +399,84 @@ void updateSelection(int row, int col) {
         selection_start_row = row;
         selection_start_col = col;
     }
-    if (row != selection_start_row || col != selection_start_col) {
-        if (row < selection_start_row || (row == selection_start_row && col < selection_start_col)) {
-            selection_start_row = row;
-            selection_start_col = col;
-        }
+    
+    int start_row = selection_start_row;
+    int start_col = selection_start_col;
+    int end_row = row;
+    int end_col = col;
+
+    if (row < start_row || 
+        (row == start_row && col < start_col)) {
+        start_row = row;
+        start_col = col;
+        end_row = selection_start_row;
+        end_col = selection_start_col;
     }
+
+    buffer.cursor_row = end_row;
+    buffer.cursor_col = end_col;
+    selection_start_row = start_row;
+    selection_start_col = start_col;
 }
 
 void copy() {
     if (selection_start_row == -1) return; 
 
-    int start_pos = 0;
-    for (int i = 0; i < selection_start_row; i++) {
-        start_pos += buffer.line_lengths[i] + 1;
+    if (clipboard) {
+        free(clipboard);
+        clipboard = NULL;
     }
-    start_pos += selection_start_col;
 
-    int end_pos = 0;
-    for (int i = 0; i < buffer.cursor_row; i++) {
-        end_pos += buffer.line_lengths[i] + 1;
+    int start_row = selection_start_row;
+    int start_col = selection_start_col;
+    int end_row = buffer.cursor_row;
+    int end_col = buffer.cursor_col;
+
+    if (start_row > end_row || (start_row == end_row && start_col > end_col)) {
+        int temp_row = start_row;
+        int temp_col = start_col;
+        start_row = end_row;
+        start_col = end_col;
+        end_row = temp_row;
+        end_col = temp_col;
     }
-    end_pos += buffer.cursor_col;
 
-    clipboard_length = end_pos - start_pos;
-    clipboard = (char *)malloc(clipboard_length + 1);
+    clipboard_length = 0;
+    for (int row = start_row; row <= end_row; row++) {
+        int row_start = 0;
+        for (int prev_row = 0; prev_row < row; prev_row++) {
+            row_start += buffer.line_lengths[prev_row] + 1;
+        }
+
+        int start = (row == start_row) ? start_col : 0;
+        int end = (row == end_row) ? end_col : buffer.line_lengths[row];
+
+        clipboard_length += (end - start + ((row != end_row) ? 1 : 0));
+    }
+
+    clipboard = malloc(clipboard_length + 1);
     if (!clipboard) die("malloc clipboard");
-    memcpy(clipboard, buffer.text + start_pos, clipboard_length);
-    clipboard[clipboard_length] = '\0';
+
+    size_t clipboard_index = 0;
+    for (int row = start_row; row <= end_row; row++) {
+        int row_start = 0;
+        for (int prev_row = 0; prev_row < row; prev_row++) {
+            row_start += buffer.line_lengths[prev_row] + 1;
+        }
+
+        int start = (row == start_row) ? start_col : 0;
+        int end = (row == end_row) ? end_col : buffer.line_lengths[row];
+
+        memcpy(clipboard + clipboard_index, 
+            buffer.text + row_start + start, 
+            end - start);
+        clipboard_index += (end - start);
+
+        if (row != end_row) {
+            clipboard[clipboard_index++] = '\n';
+        }
+    }
+    clipboard[clipboard_index] = '\0';
 }
 
 void paste() {
@@ -451,7 +507,7 @@ int main(int argc, char *argv[]) {
 
         if (is_insert_mode) {
             switch (ch) {
-                case 27:  
+                case 27: 
                     is_insert_mode = 0;
                     break;
                 case KEY_BACKSPACE:
@@ -460,6 +516,7 @@ int main(int argc, char *argv[]) {
                     break;
                 case KEY_ENTER:
                 case 10:
+                case '\r':
                     insertChar('\n');
                     break;
                 default:
@@ -468,35 +525,39 @@ int main(int argc, char *argv[]) {
                     }
                     break;
             }
-        }  
+        } 
         else if (is_visual_mode) {
             switch (ch) {
                 case 'y':  
                     copy();
                     resetSelection();
                     break;
-                case 27:  
+                case 27:  // Escape key 
                     resetSelection();
                     break;
-                case KEY_UP:
-                    moveCursorUp();
-                    updateSelection(buffer.cursor_row, buffer.cursor_col);
-                    break;
-                case KEY_DOWN:
-                    moveCursorDown();
-                    updateSelection(buffer.cursor_row, buffer.cursor_col);
-                    break;
-                case KEY_LEFT:
+                case 'h':
                     moveCursorLeft();
+                    is_visual_mode = 1;
                     updateSelection(buffer.cursor_row, buffer.cursor_col);
                     break;
-                case KEY_RIGHT:
+                case 'j':
+                    moveCursorDown();
+                    is_visual_mode = 1;
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
+                    break;
+                case 'k':
+                    moveCursorUp();
+                    is_visual_mode = 1;
+                    updateSelection(buffer.cursor_row, buffer.cursor_col);
+                    break;
+                case 'l':
                     moveCursorRight();
+                    is_visual_mode = 1;
                     updateSelection(buffer.cursor_row, buffer.cursor_col);
                     break;
             }
-            }
-         else {
+        }
+        else {
             switch (ch) {
                 case 'q':
                     endwin();
